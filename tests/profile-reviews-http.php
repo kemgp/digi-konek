@@ -1,0 +1,22 @@
+<?php
+$profile=request('/?page=profile','retailer');
+expectHttp(str_contains($profile['body'],'Circuit Avenue Retail'),'profile shows company name');
+$savedProfile=request('/?page=profile','retailer',['csrf'=>token($profile),'action'=>'save-profile','name'=>'Alex Updated','email'=>'retailer@demo.test','business_name'=>'Updated Retail Company']);
+expectHttp(str_contains($savedProfile['body'],'Your profile has been updated.') && str_contains($savedProfile['body'],'Updated Retail Company'),'profile edit form persists company');
+$reviewPage=request('/?page=order&id='.$orderId,'retailer');
+expectHttp(str_contains($reviewPage['body'],'Write seller review') && str_contains($reviewPage['body'],'Write product review'),'completed order exposes both review forms');
+$reviewData=['csrf'=>token($reviewPage),'action'=>'save-review','order_id'=>$orderId,'review_type'=>'product','product_id'=>1,'rating'=>5,'comment'=>'Reliable <script>alert(1)</script> product'];
+$reviewSaved=request('/?page=order&id='.$orderId,'retailer',$reviewData);
+expectHttp(str_contains($reviewSaved['body'],'Your review has been saved.'),'product review form saves');
+$display=request('/?page=product&id=1','supplier');
+expectHttp(str_contains($display['body'],'Reliable &lt;script&gt;')&&!str_contains($display['body'],'Reliable <script>'),'product review is visible and HTML escaped');
+$sellerSaved=request('/?page=order&id='.$orderId,'retailer',array_replace($reviewData,['review_type'=>'seller','comment'=>'Responsive seller']));
+expectHttp(str_contains($sellerSaved['body'],'Your review has been saved.'),'seller review form saves');
+$sellerPage=request('/?page=seller&id=2','retailer');
+expectHttp(str_contains($sellerPage['body'],'Responsive seller')&&str_contains($sellerPage['body'],'5.0 / 5'),'seller profile displays rating and feedback');
+$notice=(int)row('SELECT id FROM notifications WHERE user_id=1 AND read_at IS NULL LIMIT 1')['id'];
+$noticePage=request('/?page=notifications','retailer');
+expectHttp(str_contains($noticePage['body'],'value="read-notification"'),'individual notification read button shown');
+$noticeSaved=request('/?page=notifications','retailer',['csrf'=>token($noticePage),'action'=>'read-notification','notification_id'=>$notice]);
+expectHttp(str_contains($noticeSaved['body'],'Notification marked as read.') && row('SELECT read_at FROM notifications WHERE id=?',[$notice])['read_at']!==null,'individual notification form updates only selected record');
+expectHttp((int)row('SELECT COUNT(*) AS n FROM notifications WHERE user_id=1 AND read_at IS NULL')['n']>0,'other notifications stay unread');

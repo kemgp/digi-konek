@@ -1,0 +1,5 @@
+.env
+/storage/*
+!/storage/.gitkeep
+/tests/.runtime/
+.DS_Store

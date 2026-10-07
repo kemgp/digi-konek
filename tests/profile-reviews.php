@@ -1,0 +1,35 @@
+<?php
+// Included by run.php inside its disposable test database.
+$reviewInput=['order_id'=>$own,'review_type'=>'product','product_id'=>$pid,'rating'=>5,'comment'=>'Works well for our shop.'];
+denied(fn()=>$market->saveReview($supplier,$reviewInput),'suppliers cannot submit retailer reviews');
+denied(fn()=>$market->saveReview($r2,$reviewInput),'retailers cannot review another buyer order');
+denied(fn()=>$market->saveReview($retailer,array_replace($reviewInput,['order_id'=>$id])),'cancelled purchases cannot be reviewed');
+denied(fn()=>$market->saveReview($retailer,array_replace($reviewInput,['rating'=>6])),'review rating above five rejected');
+denied(fn()=>$market->saveReview($retailer,array_replace($reviewInput,['product_id'=>1])),'unrelated product cannot be reviewed');
+denied(fn()=>$market->saveReview($retailer,array_replace($reviewInput,['comment'=>' '])),'blank review rejected');
+$market->saveReview($retailer,$reviewInput);
+$market->saveReview($retailer,array_replace($reviewInput,['rating'=>4,'comment'=>'Updated experience.']));
+check((int)row('SELECT COUNT(*) AS n FROM product_reviews WHERE retailer_id=1 AND product_id=?',[$pid])['n']===1,'review edit does not duplicate ratings');
+check((int)row('SELECT rating FROM product_reviews WHERE retailer_id=1 AND product_id=?',[$pid])['rating']===4,'retailer can edit product review');
+$market->saveReview($retailer,array_replace($reviewInput,['review_type'=>'seller','supplier_id'=>4]));
+check((int)row('SELECT supplier_id FROM seller_reviews WHERE retailer_id=1')['supplier_id']===2,'seller review target derives from purchase');
+$mine=(int)row('SELECT id FROM notifications WHERE user_id=1 ORDER BY id DESC LIMIT 1')['id'];
+$theirs=(int)row('SELECT id FROM notifications WHERE user_id=2 ORDER BY id DESC LIMIT 1')['id'];
+denied(fn()=>$market->markNotificationRead($retailer,$theirs),'cannot mark another user notification read');
+$market->markNotificationRead($retailer,$mine);$marked=row('SELECT read_at FROM notifications WHERE id=?',[$mine])['read_at'];
+$market->markNotificationRead($retailer,$mine);
+check($marked!==null && row('SELECT read_at FROM notifications WHERE id=?',[$mine])['read_at']===$marked,'individual read action is idempotent');
+check(row('SELECT read_at FROM notifications WHERE id=?',[$theirs])['read_at']===null,'individual read leaves other users unchanged');
+$profile=['name'=>'Updated Alex','email'=>'retailer@demo.test','business_name'=>'Updated Company','user_id'=>2,'role'=>'administrator'];
+$market->updateProfile($retailer,$profile);
+check(row('SELECT business_name FROM retailers WHERE user_id=1')['business_name']==='Updated Company','retailer company name updated');
+check(row('SELECT role FROM users WHERE id=1')['role']==='retailer','profile edit cannot change role');
+check(row('SELECT name FROM users WHERE id=2')['name']===$supplier['name'],'profile edit cannot target another user');
+denied(fn()=>$market->updateProfile($retailer,array_replace($profile,['email'=>'changed@demo.test'])),'email changes require current password');
+denied(fn()=>$market->updateProfile($retailer,array_replace($profile,['email'=>'supplier@demo.test','current_password'=>'DigiKonek!2026'])),'duplicate profile email rejected');
+$market->updateProfile($retailer,array_replace($profile,['email'=>'changed@demo.test','current_password'=>'DigiKonek!2026']));
+check($market->login('changed@demo.test','DigiKonek!2026','test-profile')===1,'changed email works for sign in');
+$market->updateProfile($admin,['name'=>$admin['name'],'email'=>$admin['email'],'business_name'=>'TechILO']);
+check(row('SELECT business_name FROM administrators WHERE user_id=3')['business_name']==='TechILO','administrator can set company profile');
+$market->updateProfile($supplier,['name'=>$supplier['name'],'email'=>$supplier['email'],'business_name'=>'Supplier Company']);
+check(row('SELECT business_name FROM suppliers WHERE user_id=2')['business_name']==='Supplier Company','supplier company uses existing business profile');
